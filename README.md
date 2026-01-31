@@ -1,262 +1,251 @@
-# Moshi: a speech-text foundation model for real time dialogue
+# Moshi – Speech-Text Foundation Model for Real-Time Voice Dialogue | AI Voice Assistant
 
 ![precommit badge](https://github.com/kyutai-labs/moshi/workflows/precommit/badge.svg)
 ![rust ci badge](https://github.com/kyutai-labs/moshi/workflows/Rust%20CI/badge.svg)
 
-[[Read the paper]][moshi] [[Demo]](https://moshi.chat) [[Hugging Face]](https://huggingface.co/collections/kyutai/moshi-v01-release-66eaeaf3302bef6bd9ad7acd)
+**Moshi** is an open-source speech-text foundation model for **real-time full-duplex voice dialogue**. It powers natural voice conversations with low latency using the Mimi neural audio codec. Try the [live demo](https://moshi.chat) or use [Hugging Face models](https://huggingface.co/collections/kyutai/moshi-v01-release-66eaeaf3302bef6bd9ad7acd).
 
- [Moshi][moshi] is a speech-text foundation model and **full-duplex** spoken dialogue framework.
- It uses [Mimi][moshi], a state-of-the-art streaming neural audio codec. Mimi processes 24 kHz audio, down to a 12.5 Hz representation
- with a bandwidth of 1.1 kbps, in a fully streaming manner (latency of 80ms, the frame size),
- yet performs better than existing, non-streaming, codec like
- [SpeechTokenizer](https://github.com/ZhangXInFD/SpeechTokenizer) (50 Hz, 4kbps), or [SemantiCodec](https://github.com/haoheliu/SemantiCodec-inference) (50 Hz, 1.3kbps).
+---
 
- Moshi models **two streams of audio**: one corresponds to Moshi, and the other one to the user.
- At inference, the stream from the user is taken from the audio input,
-and the one for Moshi is sampled from the model's output. Along these two audio streams, Moshi predicts text tokens corresponding to its own speech, its **inner monologue**,
-which greatly improves the quality of its generation. A small Depth Transformer models inter codebook dependencies for a given time step,
-while a large, 7B parameter Temporal Transformer models the temporal dependencies. Moshi achieves a theoretical latency
-of 160ms (80ms for the frame size of Mimi + 80ms of acoustic delay), with a practical overall latency as low as 200ms on an L4 GPU.
+## Author & Contact
 
-[Talk to Moshi](https://moshi.chat) now on our live demo.
+**Maintainer:** **KuchikiRenji**
 
+| Contact | Details |
+|--------|---------|
+| **Email** | [KuchikiRenji@outlook.com](mailto:KuchikiRenji@outlook.com) |
+| **GitHub** | [github.com/KuchikiRenji](https://github.com/KuchikiRenji) |
+| **Discord** | `kuchiki_renji` |
+
+For questions, contributions, or collaboration, reach out via the channels above.
+
+---
+
+## Table of Contents
+
+- [What is Moshi?](#what-is-moshi)
+- [Key Features](#key-features)
+- [Repository Structure](#organisation-of-the-repository)
+- [Models](#models)
+- [Requirements](#requirements)
+- [Quick Start](#quick-start)
+  - [Python (PyTorch)](#python-pytorch)
+  - [Python (MLX) for macOS](#python-mlx-for-local-inference-on-macos)
+  - [Rust Backend](#rust)
+- [Clients](#clients)
+- [Development](#development)
+- [FAQ](#faq)
+- [License](#license)
+- [Citation](#citation)
+
+---
+
+## What is Moshi?
+
+**Moshi** is a **speech-text foundation model** and **full-duplex** spoken dialogue framework. It enables real-time voice AI conversations with:
+
+- **Mimi** – A state-of-the-art **streaming neural audio codec** that processes 24 kHz audio down to a **12.5 Hz** representation at **1.1 kbps**, with **80 ms** frame latency, in a fully streaming way. It outperforms non-streaming codecs such as [SpeechTokenizer](https://github.com/ZhangXInFD/SpeechTokenizer) (50 Hz, 4 kbps) and [SemantiCodec](https://github.com/haoheliu/SemantiCodec-inference) (50 Hz, 1.3 kbps).
+
+- **Dual audio streams** – Moshi models **two streams**: one for the user (from the microphone) and one for Moshi (from the model). It also predicts **text tokens** for its own speech (inner monologue), which improves generation quality.
+
+- **Low latency** – A small **Depth Transformer** handles inter-codebook dependencies per time step; a **7B-parameter Temporal Transformer** handles time. Theoretical latency is **160 ms** (80 ms Mimi frame + 80 ms acoustic); practical end-to-end latency can be as low as **~200 ms** on an L4 GPU.
+
+**[Talk to Moshi](https://moshi.chat)** on the live demo.
 
 <p align="center">
-<img src="./moshi.png" alt="Schema representing the structure of Moshi. Moshi models two streams of audio:
-    one corresponds to Moshi, and the other one to the user. At inference, the audio stream of the user is taken from the audio input, and the audio stream for Moshi is sampled from the model's output. Along that, Moshi predicts text tokens corresponding to its own speech for improved accuracy. A small Depth Transformer models inter codebook dependencies for a given step."
+<img src="./moshi.png" alt="Moshi architecture: two audio streams (user and Moshi), text tokens, Depth and Temporal Transformers for real-time voice dialogue."
 width="650px"></p>
 
-Mimi builds on previous neural audio codecs such as [SoundStream](https://arxiv.org/abs/2107.03312)
-and [EnCodec](https://github.com/facebookresearch/encodec), adding a Transformer both in the encoder and decoder,
-and adapting the strides to match an overall frame rate of 12.5 Hz. This allows Mimi to get closer to the
-average frame rate of text tokens (~3-4 Hz), and limit the number of autoregressive steps in Moshi.
-Similarly to SpeechTokenizer, Mimi uses a distillation loss so that the first codebook tokens match
-a self-supervised representation from [WavLM](https://arxiv.org/abs/2110.13900), which allows modeling semantic and acoustic information with a single model. Interestingly, while Mimi is fully causal and streaming, it learns to match sufficiently well the non-causal
-representation from WavLM, without introducing any delays. Finally, and similarly to [EBEN](https://arxiv.org/pdf/2210.14090),
-Mimi uses **only an adversarial training loss**, along with feature matching, showing strong improvements in terms of
-subjective quality despite its low bitrate.
+### About Mimi (Neural Codec)
+
+Mimi builds on [SoundStream](https://arxiv.org/abs/2107.03312) and [EnCodec](https://github.com/facebookresearch/encodec), adding Transformers in both encoder and decoder and using strides for a **12.5 Hz** frame rate—closer to text token rates (~3–4 Hz)—reducing autoregressive steps in Moshi. Like SpeechTokenizer, Mimi uses a distillation loss so the first codebook tokens match [WavLM](https://arxiv.org/abs/2110.13900) representations, modeling both semantic and acoustic content. Mimi is causal and streaming yet matches non-causal WavLM well. Like [EBEN](https://arxiv.org/pdf/2210.14090), it uses **only an adversarial training loss** with feature matching for strong subjective quality at low bitrate.
 
 <p align="center">
-<img src="./mimi.png" alt="Schema representing the structure of Mimi, our proposed neural codec. Mimi contains a Transformer
-in both its encoder and decoded, and achieves a frame rate closer to that of text tokens. This allows us to reduce
-the number of auto-regressive steps taken by Moshi, thus reducing the latency of the model."
+<img src="./mimi.png" alt="Mimi neural codec: Transformer encoder and decoder, 12.5 Hz frame rate, streaming audio compression for Moshi."
 width="800px"></p>
 
+---
 
+## Key Features
+
+- **Real-time full-duplex voice dialogue** – Speak and hear responses with low latency.
+- **Streaming neural codec (Mimi)** – 24 kHz → 12.5 Hz, 1.1 kbps, 80 ms frames.
+- **Multiple backends** – PyTorch, MLX (Apple Silicon), and Rust/Candle.
+- **Voice variants** – Moshika (female) and Moshiko (male); multiple quantizations (bf16, int8, int4 for MLX).
+- **Web UI and CLI** – Easy local or remote use.
+
+---
 
 ## Organisation of the repository
 
-There are three separate versions of the moshi inference stack in this repo.
-- The Python version using PyTorch is in the [`moshi/`](moshi/) directory.
-- The Python version using MLX for M series Macs is in the [`moshi_mlx/`](moshi_mlx/) directory.
-- The Rust version used in production is in the [`rust/`](rust/) directory.
-    This contains in particular a Mimi implementation in Rust, with Python bindings available
-    as `rustymimi`.
+| Directory | Description |
+|-----------|-------------|
+| [`moshi/`](moshi/) | **Python (PyTorch)** – Moshi and Mimi inference. |
+| [`moshi_mlx/`](moshi_mlx/) | **Python (MLX)** – Moshi on Apple M-series Macs. |
+| [`rust/`](rust/) | **Rust** – Production backend; includes Mimi in Rust and `rustymimi` Python bindings. |
+| [`client/`](client/) | **Web UI** – Frontend for the live demo. |
 
-Finally, the code for the live demo is provided in the [`client/`](client/) directory.
-
+---
 
 ## Models
 
-We release three models:
-- our speech codec Mimi,
-- Moshi fine-tuned on a male synthetic voice (Moshiko),
-- Moshi fine-tuned on a female synthetic voice (Moshika).
+Released models:
 
-Depending on the backend, the file format and quantization available will vary. Here is the list
-of the HuggingFace repo with each model. Mimi is bundled in each of those, and always use the same checkpoint format.
+- **Mimi** – Speech codec (included in each Moshi repo).
+- **Moshika** – Moshi with female voice.
+- **Moshiko** – Moshi with male voice.
 
-- Moshika for PyTorch (bf16): [kyutai/moshika-pytorch-bf16](https://huggingface.co/kyutai/moshika-pytorch-bf16).
-- Moshiko for PyTorch (bf16): [kyutai/moshiko-pytorch-bf16](https://huggingface.co/kyutai/moshiko-pytorch-bf16).
-- Moshika for MLX (int4, int8, bf16): [kyutai/moshika-mlx-q4](https://huggingface.co/kyutai/moshika-mlx-q4), [kyutai/moshika-mlx-q8](https://huggingface.co/kyutai/moshika-mlx-q8),  [kyutai/moshika-mlx-bf16](https://huggingface.co/kyutai/moshika-mlx-bf16).
-- Moshiko for MLX (int4, int8, bf16): [kyutai/moshiko-mlx-q4](https://huggingface.co/kyutai/moshiko-mlx-q4), [kyutai/moshiko-mlx-q8](https://huggingface.co/kyutai/moshiko-mlx-q8),  [kyutai/moshiko-mlx-bf16](https://huggingface.co/kyutai/moshiko-mlx-bf16).
-- Moshika for Rust/Candle (int8, bf16): [kyutai/moshika-candle-q8](https://huggingface.co/kyutai/moshika-candle-q8),  [kyutai/moshika-mlx-bf16](https://huggingface.co/kyutai/moshika-candle-bf16).
-- Moshiko for Rust/Candle (int8, bf16): [kyutai/moshiko-candle-q8](https://huggingface.co/kyutai/moshiko-candle-q8),  [kyutai/moshiko-mlx-bf16](https://huggingface.co/kyutai/moshiko-candle-bf16).
+Formats and quantization depend on the backend. All are on Hugging Face (CC-BY 4.0):
 
-All models are released under the CC-BY 4.0 license.
+| Model | Backend | Variants |
+|-------|---------|----------|
+| Moshika | PyTorch | [kyutai/moshika-pytorch-bf16](https://huggingface.co/kyutai/moshika-pytorch-bf16) (bf16) |
+| Moshiko | PyTorch | [kyutai/moshiko-pytorch-bf16](https://huggingface.co/kyutai/moshiko-pytorch-bf16) (bf16) |
+| Moshika | MLX | [q4](https://huggingface.co/kyutai/moshika-mlx-q4) / [q8](https://huggingface.co/kyutai/moshika-mlx-q8) / [bf16](https://huggingface.co/kyutai/moshika-mlx-bf16) |
+| Moshiko | MLX | [q4](https://huggingface.co/kyutai/moshiko-mlx-q4) / [q8](https://huggingface.co/kyutai/moshiko-mlx-q8) / [bf16](https://huggingface.co/kyutai/moshiko-mlx-bf16) |
+| Moshika | Rust/Candle | [q8](https://huggingface.co/kyutai/moshika-candle-q8) / [bf16](https://huggingface.co/kyutai/moshika-candle-bf16) |
+| Moshiko | Rust/Candle | [q8](https://huggingface.co/kyutai/moshiko-candle-q8) / [bf16](https://huggingface.co/kyutai/moshiko-candle-bf16) |
+
+---
 
 ## Requirements
 
-You will need at least Python 3.10, with 3.12 recommended. For specific requirements, please check the individual backends
-directories. You can install the PyTorch and MLX clients with the following:
+- **Python** – 3.10 minimum; **3.12 recommended**. See each backend’s directory for details.
+- **PyTorch / MLX** – Install via PyPI (see below). MLX and `rustymimi` may need **Python 3.12** or a [Rust toolchain](https://rustup.rs/).
+- **Rust backend** – [Rust toolchain](https://rustup.rs/); for GPU: [CUDA](https://developer.nvidia.com/cuda-toolkit) with `nvcc`.
+- **GPU** – PyTorch: ~24 GB VRAM (no quantization). MLX tested on MacBook Pro M3. Windows is not officially supported.
+
+### Install from PyPI
 
 ```bash
-pip install moshi      # moshi PyTorch, from PyPI
-pip install moshi_mlx  # moshi MLX, from PyPI, best with Python 3.12.
-# Or the bleeding edge versions for Moshi and Moshi-MLX.
+pip install moshi        # PyTorch
+pip install moshi_mlx    # MLX (Python 3.12 recommended)
+pip install rustymimi    # Mimi in Rust (Python bindings)
+
+# Bleeding edge from this repo
 pip install -e "git+https://git@github.com/kyutai-labs/moshi.git#egg=moshi&subdirectory=moshi"
 pip install -e "git+https://git@github.com/kyutai-labs/moshi.git#egg=moshi_mlx&subdirectory=moshi_mlx"
-
-pip install rustymimi  # mimi, rust implementation with Python bindings from PyPI
 ```
 
-If you are not using Python 3.12, you might get an error when installing
-`moshi_mlx` or `rustymimi` (which `moshi_mlx` depends on). Then,you will need to install the [Rust toolchain](https://rustup.rs/), or switch to Python 3.12.
+---
 
-While we hope that the present codebase will work on Windows, we do not provide official support for it.
-We have tested the MLX version on a MacBook Pro M3. At the moment, we do not support quantization
-for the PyTorch version, so you will need a GPU with a significant amount of memory (24GB).
+## Quick Start
 
-For using the Rust backend, you will need a recent version of the [Rust toolchain](https://rustup.rs/).
-To compile GPU support, you will also need the [CUDA](https://developer.nvidia.com/cuda-toolkit) properly installed for your GPU, in particular with `nvcc`.
+### Python (PyTorch)
 
-## Python (PyTorch)
+Start the server, then open the web UI at **http://localhost:8998**:
 
-The PyTorch based API can be found in the `moshi` directory. It provides a streaming
-version of the audio tokenizer (mimi) and the language model (moshi).
-
-In order to run in interactive mode, you need to start a server which will
-run the model, you can then use either the web UI or a command line client.
-
-Start the server with:
 ```bash
 python -m moshi.server [--gradio-tunnel] [--hf-repo kyutai/moshika-pytorch-bf16]
 ```
 
-And then access the web UI on [localhost:8998](http://localhost:8998). If your GPU is on a distant machine
-with no direct access, `--gradio-tunnel` will create a tunnel with a URL accessible from anywhere.
-Keep in mind that this tunnel goes through the US and can add significant latency (up to 500ms from Europe).
-You can use `--gradio-tunnel-token` to set a fixed secret token and reuse the same address over time.
-Alternatively, you might want to use SSH to redirect your connection.
+- Use `--gradio-tunnel` for a public URL (e.g. remote GPU). Latency may increase (e.g. +500 ms from Europe).
+- Use `--gradio-tunnel-token` for a fixed secret token and stable URL.
+- Use `--hf-repo` to pick another Hugging Face model.
 
-You can use `--hf-repo` to select a different pretrained model, by setting the proper Hugging Face repository.
+CLI client (no echo cancellation):
 
-Accessing a server that is not localhost via http may cause issues with using
-the microphone in the web UI (in some browsers this is only allowed using
-https).
-
-A local client is also available, as
 ```bash
 python -m moshi.client [--url URL_TO_GRADIO]
 ```
-However note that, unlike the web browser, this client is barebone: It does not perform any echo cancellation,
-nor does it try to compensate for a growing lag by skipping frames.
 
-For more information, in particular on how to use the API directly, please
-checkout [moshi/README.md](moshi/README.md).
+More details and API: [moshi/README.md](moshi/README.md).
 
-## Python (MLX) for local inference on macOS
+### Python (MLX) for local inference on macOS
 
-Once you have installed `moshi_mlx`, you can run
 ```bash
-python -m moshi_mlx.local -q 4   # weights quantized to 4 bits
-python -m moshi_mlx.local -q 8   # weights quantized to 8 bits
-# And using a different pretrained model:
+python -m moshi_mlx.local -q 4   # 4-bit quantization
+python -m moshi_mlx.local -q 8   # 8-bit
 python -m moshi_mlx.local -q 4 --hf-repo kyutai/moshika-mlx-q4
-python -m moshi_mlx.local -q 8 --hf-repo kyutai/moshika-mlx-q8
-# be careful to always match the `-q` and `--hf-repo` flag.
 ```
 
-This command line interface is also barebone. It does not perform any echo cancellation,
-nor does it try to compensate for a growing lag by skipping frames.
+Web UI:
 
-Alternatively you can run `python -m moshi_mlx.local_web` to use
-the web UI, the connection is via http and will be at [localhost:8998](http://localhost:8998).
+```bash
+python -m moshi_mlx.local_web
+# → http://localhost:8998
+```
 
-## Rust
+Match `-q` and `--hf-repo` (e.g. q4 with `*-mlx-q4`).
 
-In order to run the Rust inference server, use the following command from within
-the `rust` directory:
+### Rust
+
+From the `rust` directory:
 
 ```bash
 cargo run --features cuda --bin moshi-backend -r -- --config moshi-backend/config.json standalone
 ```
 
-When using macOS, you can replace `--features cuda` with `--features metal`.
+On macOS use `--features metal` instead of `--features cuda`. For int8 use `config-q8.json`. Set `"hf_repo"` in the config for Moshika/Moshiko.
 
-Alternatively you can use `config-q8.json` rather than `config.json` to use the
-quantized q8 model. You can select a different pretrained model, e.g. Moshika,
-by changing the `"hf_repo"` key in either file.
+When you see **"standalone worker listening"**, open the web UI at **https://localhost:8998** (browser may show a warning; you can proceed to localhost).
 
-Once the server has printed 'standalone worker listening', you can use the web
-UI. By default the Rust server uses https so it will be at
-[localhost:8998](https://localhost:8998).
-
-You will get warnings about the site being unsafe. When using chrome you
-can bypass these by selecting "Details" or "Advanced", then "Visit this unsafe
-site" or "Proceed to localhost (unsafe)".
+---
 
 ## Clients
 
-We recommend using the web UI as it provides additional echo cancellation that helps
-the overall model quality. Note that most command will directly serve this UI
-in the provided URL, and there is in general nothing more to do.
+- **Web UI** (recommended) – Echo cancellation and best experience; usually served automatically at the URLs above.
+- **Rust CLI** – From `rust/`: `cargo run --bin moshi-cli -r -- tui --host localhost`
+- **Python CLI** – `python -m moshi.client`
 
-Alternatively, we provide command line interfaces
-for the Rust and Python versions, the protocol is the same as with the web UI so
-there is nothing to change on the server side.
+### Building the Web UI
 
-For reference, here is the list of clients for Moshi.
-
-### Rust Command Line
-
-From within the `rust` directory, run the following:
-```bash
-cargo run --bin moshi-cli -r -- tui --host localhost
-```
-
-### Python with PyTorch
-
-```bash
-python -m moshi.client
-```
-
-### WebUI
-
-The web UI can be built from this repo via the
-following steps (these will require `npm` being installed).
 ```bash
 cd client
 npm install
 npm run build
 ```
 
-The web UI can then be found in the `client/dist` directory.
+Output is in `client/dist`.
+
+---
 
 ## Development
 
-If you wish to install from a clone of this repository, maybe to further develop Moshi, you can do the following:
+From the repo root:
+
 ```bash
-# From the root of the clone of the repo
 pip install -e 'moshi[dev]'
 pip install -e 'moshi_mlx[dev]'
 pre-commit install
 ```
 
-If you wish to build locally `rustymimi` (assuming you have Rust properly installed):
+Build `rustymimi` locally (with Rust installed):
+
 ```bash
 pip install maturin
 maturin dev -r -m rust/mimi-pyo3/Cargo.toml
 ```
 
+---
+
 ## FAQ
 
-Checkout the [Frequently Asked Questions](FAQ.md) section before opening an issue.
+See [FAQ.md](FAQ.md) before opening an issue. Common topics: training code, dataset, multilingual support, voice/personality, M1/small GPU, PyTorch quantization.
 
+---
 
 ## License
 
-The present code is provided under the MIT license for the Python parts, and Apache license for the Rust backend.
-The web client code is provided under the MIT license.
-Note that parts of this code is based on [AudioCraft](https://github.com/facebookresearch/audiocraft), released under
-the MIT license.
+- **Code** – MIT (Python, client); Apache (Rust backend). Some code is based on [AudioCraft](https://github.com/facebookresearch/audiocraft) (MIT).
+- **Model weights** – CC-BY 4.0.
 
-The weights for the models are released under the CC-BY 4.0 license.
+---
 
 ## Citation
 
-If you use either Mimi or Moshi, please cite the following paper,
+If you use Mimi or Moshi, please cite:
 
-```
+```bibtex
 @techreport{kyutai2024moshi,
     author = {Alexandre D\'efossez and Laurent Mazar\'e and Manu Orsini and Am\'elie Royer and
-			  Patrick P\'erez and Herv\'e J\'egou and Edouard Grave and Neil Zeghidour},
+              Patrick P\'erez and Herv\'e J\'egou and Edouard Grave and Neil Zeghidour},
     title = {Moshi: a speech-text foundation model for real-time dialogue},
     institution = {Kyutai},
-    year={2024},
-    month={September},
-    url={http://kyutai.org/Moshi.pdf},
+    year = {2024},
+    month = {September},
+    url = {http://kyutai.org/Moshi.pdf},
 }
 ```
 
-[moshi]: https://kyutai.org/Moshi.pdf
+**Paper:** [Moshi: a speech-text foundation model for real-time dialogue](http://kyutai.org/Moshi.pdf)
